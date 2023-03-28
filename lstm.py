@@ -12,8 +12,9 @@ class LSTMTest(nn.Module):
         super(LSTMTest, self).__init__()
 
         input_dim = 1
-        self.lstm = nn.LSTM(input_dim, hidden_size=12, num_layers=3, batch_first=True)
-        self.fc = nn.Linear(12, 1)
+        self.hidden_size = 64
+        self.lstm = nn.LSTM(input_dim, hidden_size=self.hidden_size, num_layers=2, batch_first=True)
+        self.fc = nn.Linear(self.hidden_size, 1)
 
     def forward(self, x, h0=None, c0=None, time_predictions=False):
         batched = x.ndim == 3
@@ -23,36 +24,28 @@ class LSTMTest(nn.Module):
             lstm_out, (hn, cn) = self.lstm(x, None)  # none inits the h0,c0 to zero
         else:
             lstm_out, (hn, cn) = self.lstm(x, (h0, c0))
-        if batched:
-            reshape = hn[-1].view(-1, 12)  # get the last hidden state (from last layer)
-        else:
-            reshape = hn[-1].view(12)
-        out = self.fc(reshape)
-
-        if time_predictions:  # return a prediction for every point in time
-            time_preds = self.fc(lstm_out)
-            return out, (hn, cn), time_preds
+        out = self.fc(lstm_out)
 
         return out, (hn, cn)
 
     def n_step(self, last_prediction, hn, cn, future_steps):
         outputs = []
+        last_prediction = last_prediction.unsqueeze(-1)
         with torch.no_grad():
             for i in range(future_steps):
-                out, (hn, cn) = self.forward(last_prediction.unsqueeze(last_prediction.ndim - 1), hn, cn)
-                outputs.append(out)
+                out, (hn, cn) = self.forward(last_prediction, hn, cn)
+                outputs.append(out.squeeze(0))
                 last_prediction = out
         return outputs
 
-    def test_and_plot(self, x_test, y_test):
+    def test_and_plot(self, x_test, y_test, n_steps=100):
         f = plt.figure()
-        o, (h, c), time_pred = self.forward(x_test, time_predictions=True)
-        n_steps = 100
-        preds = self.n_step(o, h, c, n_steps)
+        o, (h, c) = self.forward(x_test)
+        preds = self.n_step(o[-1], h, c, n_steps)
 
-        x_plt = x_test.squeeze(-1).tolist()
+        x_plt = list(np.arange(len(x_test)))
         target_plt = y_test.tolist()
-        output_plt = time_pred.squeeze(-1).tolist()
+        output_plt = o.squeeze(-1).tolist()
 
         x_plt2 = list(np.arange(n_steps) + len(x_test))
         y_plt2 = []
@@ -105,10 +98,14 @@ if __name__ == '__main__':
     x = torch.tensor(np.arange(L) + np.random.randint(-4 * T, 4 * T, N).reshape(N, 1), dtype=torch.float32).unsqueeze(-1)
     y = torch.sin(x / T)
 
-    lstm = LSTMTest()
-    o, (h, c), preds = lstm.forward(x, time_predictions=True)
+    # x = torch.tensor(np.arange(1000), dtype=torch.float32).unsqueeze(-1)
+    # y = torch.sin(x / T)
 
-    x_o, y_o = create_train_data(x, y, 300, 1, False)
+    lstm = LSTMTest()
+    # o, (h, c) = lstm.forward(y[:-1])
+    # lstm.n_step(o[-1], h, c, 10)
+
+    x_o, y_o = create_train_data(y[:, :-1], y[:, 1:], 300, 1, False)
 
     # used for checking non-batched inputs to creat_train_data
     # x_test = torch.tensor(np.arange(1000), dtype=torch.float32).unsqueeze(-1)
@@ -116,6 +113,7 @@ if __name__ == '__main__':
     # x_o, y_o = create_train_data(x_test, y_test, 300, 1, False)
 
     dataset = data.TensorDataset(x_o, y_o)
+    dataset = data.TensorDataset(y[:, :-1], y[:, 1:])
     train_loader = data.DataLoader(dataset, shuffle=True, batch_size=256)
 
     epochs = 15
@@ -127,16 +125,18 @@ if __name__ == '__main__':
 
             def closure():
                 optimizer.zero_grad()
-                single_step, _, multi_step = lstm(inputs, time_predictions=True)
-                loss = loss_fn(multi_step, targets)
+                out, _ = lstm(inputs)
+                loss = loss_fn(out, targets)
                 loss.backward()
                 return loss
 
             optimizer.step(closure)
 
-        x_test = torch.tensor(np.arange(50), dtype=torch.float32).unsqueeze(-1)
+        x_test = torch.tensor(np.arange(1000), dtype=torch.float32).unsqueeze(-1)
         y_test = torch.sin(x_test / T)
 
-        fig = lstm.test_and_plot(x_test, y_test)
+        fig = lstm.test_and_plot(y_test[:-1], y_test[1:], n_steps=1000)
         fig.suptitle(f"Epoch {epoch}")
         plt.show()
+
+
