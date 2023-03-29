@@ -17,7 +17,6 @@ class LSTMTest(nn.Module):
         self.fc = nn.Linear(self.hidden_size, 1)
 
     def forward(self, x, h0=None, c0=None, time_predictions=False):
-        batched = x.ndim == 3
         # if not batched:
         #     x = x.unsqueeze(0)
         if h0 is None and c0 is None:
@@ -38,10 +37,18 @@ class LSTMTest(nn.Module):
                 last_prediction = out
         return outputs
 
-    def test_and_plot(self, x_test, y_test, n_steps=100):
+    def test_and_plot(self, x_test, y_test, y_val, n_steps=100):
+        """
+        :param x_test: input Tensor [L, channel]
+        :param y_test: targets of inputs Tensor [L, 1]
+        :param y_val: true values over future [n_steps, 1]
+        :param n_steps: Number of future steps
+        :return: pyplot figure
+        """
+
         f = plt.figure()
         o, (h, c) = self.forward(x_test)
-        preds = self.n_step(o[-1], h, c, n_steps)
+        preds = self.n_step(x_test, n_steps)
 
         x_plt = list(np.arange(len(x_test)))
         target_plt = y_test.tolist()
@@ -52,9 +59,10 @@ class LSTMTest(nn.Module):
         for t in preds:
             y_plt2.append(t.item())
 
-        plt.plot(x_plt, target_plt, 'k-', label='Target')
+        plt.plot(x_plt, target_plt, 'k-', label='Input')
         plt.plot(x_plt, output_plt, 'b-', label='Output')
         plt.plot(x_plt2, y_plt2, 'r--', label='Future')
+        plt.plot(x_plt2, y_val.tolist(), 'b:', label='Future Real')
         plt.legend()
         return f
 

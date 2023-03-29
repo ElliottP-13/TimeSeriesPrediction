@@ -62,7 +62,15 @@ class LTSFBase(nn.Module):
 
         return torch.cat(outputs, 1)[0, :n_steps]  # stick them all together into [Batch, n_steps, channel]
 
-    def test_and_plot(self, x_test, y_test, n_steps=100):
+    def test_and_plot(self, x_test, y_test, y_val, n_steps=100):
+        """
+
+        :param x_test: input Tensor [L, channel]
+        :param y_test: targets of inputs Tensor [L, 1]
+        :param y_val: true values over future [n_steps, 1]
+        :param n_steps: Number of future steps
+        :return: pyplot figure
+        """
         f = plt.figure()
 
         preds = self.n_step(x_test, n_steps)
@@ -77,6 +85,7 @@ class LTSFBase(nn.Module):
 
         plt.plot(x_plt, target_plt, 'k-', label='Input')
         plt.plot(x_plt2, y_plt2, 'r--', label='Future')
+        plt.plot(x_plt2, y_val.tolist(), 'b:', label='Future Real')
         plt.legend()
         return f
 
@@ -215,7 +224,8 @@ if __name__ == '__main__':
 
         x_test = torch.tensor(np.arange(1000), dtype=torch.float32).unsqueeze(-1)
         y_test = torch.sin(x_test / T)
+        y_val = torch.sin(torch.tensor(np.arange(1000) + x_test[L][0].item(), dtype=torch.float32).unsqueeze(-1))
 
-        fig = model.test_and_plot(y_test[-L:], y_test[-L:], n_steps=1000)
+        fig = model.test_and_plot(y_test[:L], y_test[:L], y_val, n_steps=1000)
         fig.suptitle(f"Epoch {epoch}")
         plt.show()
